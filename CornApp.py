@@ -9,149 +9,223 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-# ========== 1. 路径与设备配置 ==========
-# 如果部署到 GitHub，建议改为相对路径，例如：IMPUTER_SCALER_PATH = 'corn_treat.pkl'
+# ========== 1. 页面配置 (必须在第一行) ==========
+st.set_page_config(
+    page_title="Corn Prediction System",
+    page_icon="🌽",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# ========== 2. 注入苹果官网风格 CSS ==========
+def local_css():
+    st.markdown("""
+        <style>
+        /* 全局字体设置，模拟 SF Pro */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
+        html, body, [class*="css"] {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #f5f5f7; /* 苹果官网经典底色 */
+        }
+
+        /* 标题样式：大、黑、重 */
+        .main-title {
+            font-weight: 600;
+            font-size: 48px;
+            color: #1d1d1f;
+            text-align: center;
+            margin-bottom: 10px;
+            letter-spacing: -0.02em;
+        }
+        .sub-title {
+            font-size: 24px;
+            color: #86868b;
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        /* 卡片样式：极简圆角与微阴影 */
+        .apple-card {
+            background-color: #ffffff;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
+            margin-bottom: 20px;
+            border: 1px solid #e5e5e7;
+        }
+
+        /* 按钮优化：蓝色胶囊状 */
+        .stButton>button {
+            background-color: #0071e3;
+            color: white;
+            border-radius: 980px; /* 彻底圆角 */
+            padding: 12px 24px;
+            border: none;
+            font-weight: 400;
+            transition: all 0.3s ease;
+            width: auto;
+            margin: 0 auto;
+            display: block;
+        }
+        .stButton>button:hover {
+            background-color: #0077ed;
+            box-shadow: 0 4px 12px rgba(0, 113, 227, 0.3);
+            border: none;
+            color: white;
+        }
+
+        /* 指标卡片优化 */
+        [data-testid="stMetricValue"] {
+            font-size: 32px;
+            font-weight: 600;
+            color: #1d1d1f;
+        }
+        
+        /* 隐藏Streamlit页眉页脚 */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        </style>
+    """, unsafe_allow_html=True)
+
+local_css()
+
+# ========== 3. 路径与设备配置 ==========
 IMPUTER_SCALER_PATH = 'corn_treat.pkl'       
 LNN_MODEL_PATH = 'LNNclassification.pt'     
 LOG_FILE_PATH = 'user_agreement_log.txt'
-
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # ==========================================
-# 2. 免责声明与合规记录逻辑
+# 4. 免责声明逻辑 (改为卡片式居中展示)
 # ==========================================
 def check_disclaimer():
     if 'agreed' not in st.session_state:
         st.session_state.agreed = False
 
     if not st.session_state.agreed:
-        st.title("🌽 玉米储存年份预测系统")
-        st.warning("### ⚖️ 免责声明")
-        st.info("""
-        本内容由人工智能模型生成，所呈现的预测、分析或结论仅为基于已有数据与算法的推演结果，不构成任何形式的保证、承诺或专业建议。AI模型可能存在误差、偏差或对未知因素的考虑不足，实际结果可能与预测存在显著差异。用户应结合自身判断、专业咨询及实时信息独立做出决策，并自行承担因使用本预测内容所引发的一切风险与责任。开发者及提供方不对任何直接或间接损失承担责任。
-
-        **请谨慎使用预测结果，切勿将其作为唯一决策依据。**
-        """)
-        
-        if st.button("我已阅读并同意以上声明", type="primary"):
-            # 记录日志
-            try:
-                with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
-                    t = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    f.write(f"[{t}] 用户同意了免责声明并进入系统\n")
-            except:
-                pass # 防止权限问题导致崩溃
-                
-            st.session_state.agreed = True
-            st.rerun()
+        _, col, _ = st.columns([1, 2, 1])
+        with col:
+            st.markdown('<p class="main-title">Legal</p >', unsafe_allow_html=True)
+            st.markdown("""
+                <div class="apple-card">
+                    <h3 style='text-align: center; color: #1d1d1f;'>免责声明</h3>
+                    <p style='color: #424245; line-height: 1.6; font-size: 15px;'>
+                    本内容由人工智能模型生成，所呈现的预测、分析或结论仅为基于已有数据与算法的推演结果，不构成任何形式的保证、承诺或专业建议。AI模型可能存在误差、偏差或对未知因素的考虑不足，实际结果可能与预测存在显著差异。用户应结合自身判断、专业咨询及实时信息独立做出决策，并自行承担因使用本预测内容所引发的一切风险与责任。开发者及提供方不对任何直接或间接损失承担责任。<br><br>
+                    <strong>请谨慎使用预测结果，切勿将其作为唯一决策依据。</strong>
+                    </p >
+                </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button("Agree and Continue"):
+                try:
+                    with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
+                        t = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        f.write(f"[{t}] 用户同意免责声明\n")
+                except: pass
+                st.session_state.agreed = True
+                st.rerun()
         st.stop()
 
 # ==========================================
-# 3. 数据预处理类 (优化版)
-# ==========================================
-class Data_prepossing:
-    def __init__(self, SEQ_LENGTH=1):
-        self.seq_length = SEQ_LENGTH
-        
-    def prediction_pretreatment(self, df_uploaded: pd.DataFrame, scaler):
-        # --- 核心修复：自动对齐特征列 ---
-        # 1. 获取预处理器需要的特征名单
-        if hasattr(scaler, 'feature_names_in_'):
-            expected_cols = scaler.feature_names_in_.tolist()
-            # 检查上传的列是否完整
-            missing = set(expected_cols) - set(df_uploaded.columns)
-            if missing:
-                st.error(f"❌ 上传的文件缺少必要特征列: {missing}")
-                return None, None
-            # 自动提取并排序，忽略多余的 'year', 'Skatole' 等列
-            prediction_data = df_uploaded[expected_cols]
-        else:
-            # 备选：如果scaler没存名字，则剔除已知的非特征列
-            prediction_data = df_uploaded.drop(['mass', 'year', 'Skatole', 'Vanillin'], axis=1, errors='ignore')
-
-        # 2. 获取样品名称（假设第一列是名称，或者有 'mass' 列）
-        col_name = df_uploaded['mass'] if 'mass' in df_uploaded.columns else df_uploaded.iloc[:, 0]
-
-        # 3. 标准化转换
-        trans_data = scaler.transform(prediction_data)
-
-        # 4. 转换为 Tensor 并调整维度 [Batch, Seq, Features]
-        tensor_data = torch.tensor(trans_data, dtype=torch.float32)
-        # 重新整理形状：(样本数, 序列长度, 每个序列的特征数)
-        # 这里根据你之前的逻辑，SEQ_LENGTH=1
-        feature_size = tensor_data.shape[1] // self.seq_length
-        seriesed_data = tensor_data.view(-1, self.seq_length, feature_size)
-        
-        return seriesed_data.to(DEVICE), col_name
-
-# ==========================================
-# 4. 模型加载 (带缓存)
+# 5. 模型加载与预处理 (保持原有逻辑)
 # ==========================================
 @st.cache_resource
 def load_resources():
     try:
-        # 加载预处理器
         scaler = joblib.load(IMPUTER_SCALER_PATH)
-        # 加载 LNN 模型 (TorchScript)
         model = torch.jit.load(LNN_MODEL_PATH, map_location=DEVICE)
         model.eval()
         return scaler, model
     except Exception as e:
-        st.error(f"资源加载失败: {e}")
+        st.error(f"Failed to load resources: {e}")
         return None, None
 
+class Data_prepossing:
+    def __init__(self, SEQ_LENGTH=1):
+        self.seq_length = SEQ_LENGTH
+    def prediction_pretreatment(self, df_uploaded, scaler):
+        if hasattr(scaler, 'feature_names_in_'):
+            expected_cols = scaler.feature_names_in_.tolist()
+            prediction_data = df_uploaded[expected_cols]
+        else:
+            prediction_data = df_uploaded.drop(['mass', 'year', 'Skatole', 'Vanillin'], axis=1, errors='ignore')
+        col_name = df_uploaded['mass'] if 'mass' in df_uploaded.columns else df_uploaded.iloc[:, 0]
+        trans_data = scaler.transform(prediction_data)
+        tensor_data = torch.tensor(trans_data, dtype=torch.float32)
+        feature_size = tensor_data.shape[1] // self.seq_length
+        seriesed_data = tensor_data.view(-1, self.seq_length, feature_size)
+        return seriesed_data.to(DEVICE), col_name
+
 # ==========================================
-# 5. 主程序界面
+# 6. 主程序界面
 # ==========================================
-# 权限检查
 check_disclaimer()
 
-st.title("🌽 基于液态神经网络的玉米储存年份预测")
+# 页面标题
+st.markdown('<p class="main-title">Corn Intelligence</p >', unsafe_allow_html=True)
+st.markdown('<p class="sub-title">基于液态神经网络的玉米储存年份预测</p >', unsafe_allow_html=True)
 
 scaler, model = load_resources()
 
 if scaler and model:
-    uploaded_file = st.file_uploader("上传 Excel 或 CSV 文件", type=["xlsx", "csv"])
+    # 居中布局
+    _, center_col, _ = st.columns([1, 4, 1])
+    
+    with center_col:
+        st.markdown('<div class="apple-card">', unsafe_allow_html=True)
+        uploaded_file = st.file_uploader("Choose a file (Excel/CSV)", type=["xlsx", "csv"], label_visibility="collapsed")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    if uploaded_file:
-        # 读取数据
-        try:
-            if uploaded_file.name.endswith('.xlsx'):
-                df = pd.read_excel(uploaded_file)
-            else:
-                df = pd.read_csv(uploaded_file)
-            
-            st.write("### 数据预览")
-            st.dataframe(df.head())
+        if uploaded_file:
+            try:
+                df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
+                
+                with st.expander("View Uploaded Data"):
+                    st.dataframe(df.head(), use_container_width=True)
 
-            if st.button("开始分析预测", type="primary"):
-                processor = Data_prepossing(SEQ_LENGTH=1)
-                input_tensor, names = processor.prediction_pretreatment(df, scaler)
+                if st.button("Start Analysis"):
+                    processor = Data_prepossing(SEQ_LENGTH=1)
+                    input_tensor, names = processor.prediction_pretreatment(df, scaler)
 
-                if input_tensor is not None:
-                    with torch.no_grad():
-                        output = model(input_tensor)
-                        probs = torch.softmax(output, dim=1)
-                        preds = torch.argmax(probs, dim=1)
-                        confs = torch.max(probs, dim=1)[0]
+                    if input_tensor is not None:
+                        with torch.no_grad():
+                            output = model(input_tensor)
+                            probs = torch.softmax(output, dim=1)
+                            preds = torch.argmax(probs, dim=1)
+                            confs = torch.max(probs, dim=1)[0]
 
-                    # 结果展示
-                    st.divider()
-                    st.subheader("🔮 预测报告")
-                    labels = ['≤1 year', '1-2 year', '2-3 year', '3+ year']
+                        st.markdown('<p style="font-size: 28px; font-weight: 600; margin-top: 40px;">Analysis Report</p >', unsafe_allow_html=True)
+                        labels = ['≤1 year', '1-2 year', '2-3 year', '3+ year']
 
-                    for name, p_idx, conf in zip(names, preds, confs):
-                        c1, c2, c3 = st.columns(3)
-                        c1.metric("样品", str(name))
-                        c2.metric("预测年份", labels[int(p_idx)])
-                        c3.metric("置信度", f"{conf:.1%}")
-                        
-                        if conf > 0.8:
-                            st.success("预测结果可靠")
-                        elif conf > 0.5:
-                            st.warning("建议结合实验复核")
-                        else:
-                            st.error("结果仅供参考")
-                        st.write("---")
-        except Exception as e:
-            st.error(f"运行时出错: {e}")
+                        for name, p_idx, conf in zip(names, preds, confs):
+                            # 每个结果一个精致小卡片
+                            st.markdown(f"""
+                                <div class="apple-card">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <p style="color: #86868b; font-size: 14px; margin-bottom: 5px;">Sample Name</p >
+                                            <p style="font-size: 20px; font-weight: 600;">{name}</p >
+                                        </div>
+                                        <div style="text-align: right;">
+                                            <p style="color: #86868b; font-size: 14px; margin-bottom: 5px;">Prediction</p >
+                                            <p style="font-size: 20px; font-weight: 600; color: #0071e3;">{labels[int(p_idx)]}</p >
+                                        </div>
+                                        <div style="text-align: right;">
+                                            <p style="color: #86868b; font-size: 14px; margin-bottom: 5px;">Confidence</p >
+                                            <p style="font-size: 20px; font-weight: 600;">{conf:.1%}</p >
+                                        </div>
+                                    </div>
+                                </div>
+                            """, unsafe_allow_html=True)
+
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+# 管理员日志下载 (侧边栏)
+with st.sidebar:
+    st.markdown("### Settings")
+    if st.checkbox("Show Logs"):
+        if os.path.exists(LOG_FILE_PATH):
+            with open(LOG_FILE_PATH, "r", encoding="utf-8") as f:
+                st.download_button("Download Logs", f.read(), file_name="logs.txt")
