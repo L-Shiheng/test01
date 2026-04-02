@@ -1,175 +1,314 @@
 import os
-import datetime
 import joblib
 import torch
 import pandas as pd
 import numpy as np
 import streamlit as st
+import datetime
 import warnings
+
 warnings.filterwarnings('ignore')
 
-# 定义设备
+# ========== 1. 路径与设备配置 ==========
+# 如果部署到 GitHub，建议改为相对路径，例如：IMPUTER_SCALER_PATH = 'corn_treat.pkl'
+IMPUTER_SCALER_PATH = r'D:\AIOnline\corn\corn_treat.pkl'       
+LNN_MODEL_PATH = r'D:\AIOnline\corn\LNNclassification.pt'     
+LOG_FILE_PATH = r'D:\AIOnline\corn\user_agreement_log.txt'
+
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# ========== 路径配置 ==========
-# 请确保这些路径与你电脑上的实际存放位置一致
-IMPUTER_SCALER_PATH = 'corn_treat.pkl'       
-LNN_MODEL_PATH = 'LNNclassification.pt'     
-LOG_FILE_PATH = 'user_agreement_log.txt'     
-
 # ==========================================
-# 1. 免责声明与合规记录模块
+# 2. 免责声明与合规记录逻辑
 # ==========================================
-def check_disclaimer_and_log():
-    # 初始化 session_state 来记录用户是否已经同意
-    if 'agreed_to_disclaimer' not in st.session_state:
-        st.session_state.agreed_to_disclaimer = False
+def check_disclaimer():
+    if 'agreed' not in st.session_state:
+        st.session_state.agreed = False
 
-    # 如果用户还没同意，就展示免责声明，并阻断后续渲染
-    if not st.session_state.agreed_to_disclaimer:
-        st.title("🌽 农产品/玉米年份预测系统")
-        st.warning("⚠️ 在进入系统前，请仔细阅读以下免责声明：")
-        
-        # 使用 info 框展示免责声明正文
+    if not st.session_state.agreed:
+        st.title("🌽 玉米储存年份预测系统")
+        st.warning("### ⚖️ 免责声明")
         st.info("""
-        **免责声明**
-        
         本内容由人工智能模型生成，所呈现的预测、分析或结论仅为基于已有数据与算法的推演结果，不构成任何形式的保证、承诺或专业建议。AI模型可能存在误差、偏差或对未知因素的考虑不足，实际结果可能与预测存在显著差异。用户应结合自身判断、专业咨询及实时信息独立做出决策，并自行承担因使用本预测内容所引发的一切风险与责任。开发者及提供方不对任何直接或间接损失承担责任。
-        
+
         **请谨慎使用预测结果，切勿将其作为唯一决策依据。**
         """)
         
-        # 确认按钮
-        if st.button("我已充分阅读并同意上述免责声明，开始使用系统", type="primary"):
-            # --- 核心：将同意行为写入后台日志文件 ---
-            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # 记录时间、操作。如果有用户登录系统，这里还可以加上用户名或IP
-            log_entry = f"[{current_time}] 操作：用户点击同意免责声明并进入系统。\n"
-            
+        if st.button("我已阅读并同意以上声明", type="primary"):
+            # 记录日志
             try:
-                # 以追加模式 'a' 打开/创建日志文件
                 with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
-                    f.write(log_entry)
-            except Exception as e:
-                st.toast(f"后台日志记录异常（不影响使用）: {e}")
-
-            # 记录状态为已同意，并重新刷新页面
-            st.session_state.agreed_to_disclaimer = True
+                    t = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    f.write(f"[{t}] 用户同意了免责声明并进入系统\n")
+            except:
+                pass # 防止权限问题导致崩溃
+                
+            st.session_state.agreed = True
             st.rerun()
-            
-        # st.stop() 会立刻终止代码运行，所以下面的界面在同意前不会显示
         st.stop()
 
 # ==========================================
-# 2. 资源加载模块
+# 3. 数据预处理类 (优化版)
+# ==========================================
+class Data_prepossing:
+    def __init__(self, SEQ_LENGTH=1):
+        self.seq_length = SEQ_LENGTH
+        
+    def prediction_pretreatment(self, df_uploaded: pd.DataFrame, scaler):
+        # --- 核心修复：自动对齐特征列 ---
+        # 1. 获取预处理器需要的特征名单
+        if hasattr(scaler, 'feature_names_in_'):
+            expected_cols = scaler.feature_names_in_.tolist()
+            # 检查上传的列是否完整
+            missing = set(expected_cols) - set(df_uploaded.columns)
+            if missing:
+                st.error(f"❌ 上传的文件缺少必要特征列: {missing}")
+                return None, None
+            # 自动提取并排序，忽略多余的 'year', 'Skatole' 等列
+            prediction_data = df_uploaded[expected_cols]
+        else:
+            # 备选：如果scaler没存名字，则剔除已知的非特征列
+            prediction_data = df_uploaded.drop(['mass', 'year', 'Skatole', 'Vanillin'], axis=1, errors='ignore')
+
+        # 2. 获取样品名称（假设第一列是名称，或者有 'mass' 列）
+        col_name = df_uploaded['mass'] if 'mass' in df_uploaded.columns else df_uploaded.iloc[:, 0]
+
+        # 3. 标准化转换
+        trans_data = scaler.transform(prediction_data)
+
+        # 4. 转换为 Tensor 并调整维度 [Batch, Seq, Features]
+        tensor_data = torch.tensor(trans_data, dtype=torch.float32)
+        # 重新整理形状：(样本数, 序列长度, 每个序列的特征数)
+        # 这里根据你之前的逻辑，SEQ_LENGTH=1
+        feature_size = tensor_data.shape[1] // self.seq_length
+        seriesed_data = tensor_data.view(-1, self.seq_length, feature_size)
+        
+        return seriesed_data.to(DEVICE), col_name
+
+# ==========================================
+# 4. 模型加载 (带缓存)
 # ==========================================
 @st.cache_resource
-def load_preprocessor():
-    if not os.path.exists(IMPUTER_SCALER_PATH):
-        st.error(f"❌ 找不到预处理文件：{IMPUTER_SCALER_PATH}")
-        return None
+def load_resources():
     try:
-        # 你的 pkl 包含 Pipeline(KNNImputer + Normalizer)
+        # 加载预处理器
         scaler = joblib.load(IMPUTER_SCALER_PATH)
-        return scaler
-    except Exception as e:
-        st.error(f"预处理器加载失败: {e}")
-        return None
-
-@st.cache_resource
-def load_model():
-    if not os.path.exists(LNN_MODEL_PATH):
-        st.error(f"❌ 找不到模型文件：{LNN_MODEL_PATH}")
-        return None
-    try:
-        # 根据上传的 pt 文件结构，这是 torch.jit.save 导出的 TorchScript 模型
-        # 使用 torch.jit.load 可以直接加载，不需要在代码里写复杂的 Class 定义！
+        # 加载 LNN 模型 (TorchScript)
         model = torch.jit.load(LNN_MODEL_PATH, map_location=DEVICE)
         model.eval()
-        return model
+        return scaler, model
     except Exception as e:
-        # 作为备选，如果不是 TorchScript，尝试普通的 load
-        try:
-            model = torch.load(LNN_MODEL_PATH, map_location=DEVICE, weights_only=False)
-            model.eval()
-            return model
-        except Exception as e2:
-            st.error(f"模型加载失败: 主错误 {e}, 备选错误 {e2}")
-            return None
+        st.error(f"资源加载失败: {e}")
+        return None, None
 
 # ==========================================
-# 3. 主界面与预测逻辑 (同意声明后才执行)
+# 5. 主程序界面
 # ==========================================
-# 首先执行免责声明检查
-check_disclaimer_and_log()
+# 权限检查
+check_disclaimer()
 
-# 用户同意后，正式进入系统界面
-st.title("🌽 农产品/玉米年份预测系统")
+st.title("🌽 基于液态神经网络的玉米储存年份预测")
 
-# 加载模型
-preprocessor = load_preprocessor()
-model = load_model()
+scaler, model = load_resources()
 
-if model and preprocessor:
-    st.success("✅ 模型和数据预处理引擎已加载就绪。")
-    
-    # 文件上传
-    uploaded_file = st.file_uploader("请上传待预测的样本数据 (CSV/Excel)", type=["csv", "xlsx"])
-    
-    if uploaded_file is not None:
+if scaler and model:
+    uploaded_file = st.file_uploader("上传 Excel 或 CSV 文件", type=["xlsx", "csv"])
+
+    if uploaded_file:
+        # 读取数据
         try:
-            # 读取数据
-            if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file)
-            else:
+            if uploaded_file.name.endswith('.xlsx'):
                 df = pd.read_excel(uploaded_file)
-                
+            else:
+                df = pd.read_csv(uploaded_file)
+            
             st.write("### 数据预览")
             st.dataframe(df.head())
-            
-            if st.button("开始批量预测"):
-                with st.spinner("正在进行数据标准化和推理运算..."):
-                    # 假设第一列是样品名称，后面的列是特征
-                    col_name = df.iloc[:, 0].values  
-                    features = df.iloc[:, 1:]        
-                    
-                    # 1. 预处理 (KNN Imputer -> Normalizer)
-                    processed_features = preprocessor.transform(features)
-                    
-                    # 2. 转为 Tensor
-                    # 注意：如果你的模型需要 3D 输入 (Batch, Seq_len, Features)，可能需要 unsqueeze
-                    # 这里假设模型支持批量 2D 推理，如果不兼容，可以改为 input_tensor.unsqueeze(1) 等
-                    input_tensor = torch.from_numpy(processed_features.astype(np.float32)).to(DEVICE)
-                    
-                    # 3. 推理预测
+
+            if st.button("开始分析预测", type="primary"):
+                processor = Data_prepossing(SEQ_LENGTH=1)
+                input_tensor, names = processor.prediction_pretreatment(df, scaler)
+
+                if input_tensor is not None:
                     with torch.no_grad():
                         output = model(input_tensor)
-                        probabilities = torch.softmax(output, dim=1)
-                        predicted_classes = torch.argmax(probabilities, dim=1)
-                        confidences = torch.max(probabilities, dim=1)[0].cpu().numpy()
-                    
-                    # 4. 结果展示
+                        probs = torch.softmax(output, dim=1)
+                        preds = torch.argmax(probs, dim=1)
+                        confs = torch.max(probs, dim=1)[0]
+
+                    # 结果展示
                     st.divider()
-                    st.subheader("🔮 分析报告")
-                    
-                    group_name = ['≤1 year', '1-2 year', '2-3 year', '3+ year']
-                    
-                    # 遍历并展示每个样本的结果
-                    for sample_idx, (name, p_class, conf) in enumerate(zip(col_name, predicted_classes, confidences)):
-                        class_idx = int(p_class.item())
-                        
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric(f"样本 #{sample_idx+1}", f"{name}")
-                        col2.metric("预测类别", f"{group_name[class_idx]}")
-                        col3.metric("置信度", f"{conf:.1%}")
+                    st.subheader("🔮 预测报告")
+                    labels = ['≤1 year', '1-2 year', '2-3 year', '3+ year']
+
+                    for name, p_idx, conf in zip(names, preds, confs):
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("样品", str(name))
+                        c2.metric("预测年份", labels[int(p_idx)])
+                        c3.metric("置信度", f"{conf:.1%}")
                         
                         if conf > 0.8:
-                            st.success("模型对此结果非常有信心。")
-                        elif conf > 0.6:
-                            st.warning("模型具有一定信心，建议复核。")
+                            st.success("预测结果可靠")
+                        elif conf > 0.5:
+                            st.warning("建议结合实验复核")
                         else:
-                            st.error("置信度较低，结果仅供参考。")
+                            st.error("结果仅供参考")
                         st.write("---")
-                        
         except Exception as e:
-            st.error(f"处理数据时发生错误：{e}")
+            st.error(f"运行时出错: {e}")
+import os
+import joblib
+import torch
+import pandas as pd
+import numpy as np
+import streamlit as st
+import datetime
+import warnings
+
+warnings.filterwarnings('ignore')
+
+# ========== 1. 路径与设备配置 ==========
+# 如果部署到 GitHub，建议改为相对路径，例如：IMPUTER_SCALER_PATH = 'corn_treat.pkl'
+IMPUTER_SCALER_PATH = r'D:\AIOnline\corn\corn_treat.pkl'       
+LNN_MODEL_PATH = r'D:\AIOnline\corn\LNNclassification.pt'     
+LOG_FILE_PATH = r'D:\AIOnline\corn\user_agreement_log.txt'
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+# ==========================================
+# 2. 免责声明与合规记录逻辑
+# ==========================================
+def check_disclaimer():
+    if 'agreed' not in st.session_state:
+        st.session_state.agreed = False
+
+    if not st.session_state.agreed:
+        st.title("🌽 玉米储存年份预测系统")
+        st.warning("### ⚖️ 免责声明")
+        st.info("""
+        本内容由人工智能模型生成，所呈现的预测、分析或结论仅为基于已有数据与算法的推演结果，不构成任何形式的保证、承诺或专业建议。AI模型可能存在误差、偏差或对未知因素的考虑不足，实际结果可能与预测存在显著差异。用户应结合自身判断、专业咨询及实时信息独立做出决策，并自行承担因使用本预测内容所引发的一切风险与责任。开发者及提供方不对任何直接或间接损失承担责任。
+
+        **请谨慎使用预测结果，切勿将其作为唯一决策依据。**
+        """)
+        
+        if st.button("我已阅读并同意以上声明", type="primary"):
+            # 记录日志
+            try:
+                with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
+                    t = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    f.write(f"[{t}] 用户同意了免责声明并进入系统\n")
+            except:
+                pass # 防止权限问题导致崩溃
+                
+            st.session_state.agreed = True
+            st.rerun()
+        st.stop()
+
+# ==========================================
+# 3. 数据预处理类 (优化版)
+# ==========================================
+class Data_prepossing:
+    def __init__(self, SEQ_LENGTH=1):
+        self.seq_length = SEQ_LENGTH
+        
+    def prediction_pretreatment(self, df_uploaded: pd.DataFrame, scaler):
+        # --- 核心修复：自动对齐特征列 ---
+        # 1. 获取预处理器需要的特征名单
+        if hasattr(scaler, 'feature_names_in_'):
+            expected_cols = scaler.feature_names_in_.tolist()
+            # 检查上传的列是否完整
+            missing = set(expected_cols) - set(df_uploaded.columns)
+            if missing:
+                st.error(f"❌ 上传的文件缺少必要特征列: {missing}")
+                return None, None
+            # 自动提取并排序，忽略多余的 'year', 'Skatole' 等列
+            prediction_data = df_uploaded[expected_cols]
+        else:
+            # 备选：如果scaler没存名字，则剔除已知的非特征列
+            prediction_data = df_uploaded.drop(['mass', 'year', 'Skatole', 'Vanillin'], axis=1, errors='ignore')
+
+        # 2. 获取样品名称（假设第一列是名称，或者有 'mass' 列）
+        col_name = df_uploaded['mass'] if 'mass' in df_uploaded.columns else df_uploaded.iloc[:, 0]
+
+        # 3. 标准化转换
+        trans_data = scaler.transform(prediction_data)
+
+        # 4. 转换为 Tensor 并调整维度 [Batch, Seq, Features]
+        tensor_data = torch.tensor(trans_data, dtype=torch.float32)
+        # 重新整理形状：(样本数, 序列长度, 每个序列的特征数)
+        # 这里根据你之前的逻辑，SEQ_LENGTH=1
+        feature_size = tensor_data.shape[1] // self.seq_length
+        seriesed_data = tensor_data.view(-1, self.seq_length, feature_size)
+        
+        return seriesed_data.to(DEVICE), col_name
+
+# ==========================================
+# 4. 模型加载 (带缓存)
+# ==========================================
+@st.cache_resource
+def load_resources():
+    try:
+        # 加载预处理器
+        scaler = joblib.load(IMPUTER_SCALER_PATH)
+        # 加载 LNN 模型 (TorchScript)
+        model = torch.jit.load(LNN_MODEL_PATH, map_location=DEVICE)
+        model.eval()
+        return scaler, model
+    except Exception as e:
+        st.error(f"资源加载失败: {e}")
+        return None, None
+
+# ==========================================
+# 5. 主程序界面
+# ==========================================
+# 权限检查
+check_disclaimer()
+
+st.title("🌽 基于液态神经网络的玉米储存年份预测")
+
+scaler, model = load_resources()
+
+if scaler and model:
+    uploaded_file = st.file_uploader("上传 Excel 或 CSV 文件", type=["xlsx", "csv"])
+
+    if uploaded_file:
+        # 读取数据
+        try:
+            if uploaded_file.name.endswith('.xlsx'):
+                df = pd.read_excel(uploaded_file)
+            else:
+                df = pd.read_csv(uploaded_file)
+            
+            st.write("### 数据预览")
+            st.dataframe(df.head())
+
+            if st.button("开始分析预测", type="primary"):
+                processor = Data_prepossing(SEQ_LENGTH=1)
+                input_tensor, names = processor.prediction_pretreatment(df, scaler)
+
+                if input_tensor is not None:
+                    with torch.no_grad():
+                        output = model(input_tensor)
+                        probs = torch.softmax(output, dim=1)
+                        preds = torch.argmax(probs, dim=1)
+                        confs = torch.max(probs, dim=1)[0]
+
+                    # 结果展示
+                    st.divider()
+                    st.subheader("🔮 预测报告")
+                    labels = ['≤1 year', '1-2 year', '2-3 year', '3+ year']
+
+                    for name, p_idx, conf in zip(names, preds, confs):
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("样品", str(name))
+                        c2.metric("预测年份", labels[int(p_idx)])
+                        c3.metric("置信度", f"{conf:.1%}")
+                        
+                        if conf > 0.8:
+                            st.success("预测结果可靠")
+                        elif conf > 0.5:
+                            st.warning("建议结合实验复核")
+                        else:
+                            st.error("结果仅供参考")
+                        st.write("---")
+        except Exception as e:
+            st.error(f"运行时出错: {e}")
