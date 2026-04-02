@@ -11,9 +11,9 @@ warnings.filterwarnings('ignore')
 
 # ========== 1. 路径与设备配置 ==========
 # 如果部署到 GitHub，建议改为相对路径，例如：IMPUTER_SCALER_PATH = 'corn_treat.pkl'
-IMPUTER_SCALER_PATH = r'D:\AIOnline\corn\corn_treat.pkl'       
-LNN_MODEL_PATH = r'D:\AIOnline\corn\LNNclassification.pt'     
-LOG_FILE_PATH = r'D:\AIOnline\corn\user_agreement_log.txt'
+IMPUTER_SCALER_PATH = 'corn_treat.pkl'       
+LNN_MODEL_PATH = 'LNNclassification.pt'     
+LOG_FILE_PATH = 'user_agreement_log.txt'
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
