@@ -13,10 +13,9 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # ========== 路径配置 ==========
 # 请确保这些路径与你电脑上的实际存放位置一致
-IMPUTER_SCALER_PATH = r'D:\AIOnline\corn\corn_treat.pkl'       
-LNN_MODEL_PATH = r'D:\AIOnline\corn\LNNclassification.pt'     
-# 后台记录用户点击行为的日志文件路径
-LOG_FILE_PATH = r'D:\AIOnline\corn\user_agreement_log.txt'     
+IMPUTER_SCALER_PATH = 'corn_treat.pkl'       
+LNN_MODEL_PATH = 'LNNclassification.pt'     
+LOG_FILE_PATH = 'user_agreement_log.txt'     
 
 # ==========================================
 # 1. 免责声明与合规记录模块
