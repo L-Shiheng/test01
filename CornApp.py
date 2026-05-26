@@ -221,19 +221,36 @@ def extract_compound_data(file_input: Union[str, BytesIO], output_csv=None):
             break
 
     # 3. 从数据文件路径提取样品名称（去掉.qgd）
-    for idx, row in enumerate(data_rows, start=1):
-        if len(row) >= 2:
-            file_path = row[1].strip()
-            base_name = os.path.basename(file_path)
-            if base_name.lower().endswith('.qgd'):
-                sample_name = base_name[:-4]
-            else:
-                sample_name = base_name
-            if not sample_name:
-                sample_name = f"Sample_{idx}"
-        else:
+    # for idx, row in enumerate(data_rows, start=1):
+    #     if len(row) >= 2:
+    #         file_path = row[1].strip()
+    #         base_name = os.path.basename(file_path)
+    #         if base_name.lower().endswith('.qgd'):
+    #             sample_name = base_name[:-4]
+    #         else:
+    #             sample_name = base_name
+    #         if not sample_name:
+    #             sample_name = f"Sample_{idx}"
+    #     else:
+    #         sample_name = f"Sample_{idx}"
+    #     sample_names.append(sample_name)
+   for idx, row in enumerate(data_rows, start=1):
+    if len(row) >= 2:
+        raw = row[1].strip()
+        if not raw:
             sample_name = f"Sample_{idx}"
-        sample_names.append(sample_name)
+        else:
+            # 清理可能隐藏的空白/控制字符
+            raw = raw.replace('\r', '').replace('\n', '')
+            base = os.path.basename(raw).strip()
+            # 处理扩展名
+            if base.lower().endswith('.qgd'):
+                sample_name = base[:-4]   # 或者用 os.path.splitext(base)[0]
+            else:
+                sample_name = base
+    else:
+        sample_name = f"Sample_{idx}"
+    sample_names.append(sample_name)
 
     # 4. 读取结果表头
     # header_row = next(reader)   # ["ID", "组分名称", "数据1 峰面积", ...]
