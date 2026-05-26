@@ -8,7 +8,6 @@ import datetime
 import warnings
 from typing import Union
 from io import StringIO, BytesIO
-from pathlib import Path  # 新增导入，用于跨平台路径处理
 
 warnings.filterwarnings('ignore')
 
@@ -35,7 +34,6 @@ def check_disclaimer():
         """)
         
         if st.button("我已阅读并同意以上声明", type="primary"):
-            # 记录日志
             try:
                 with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
                     t = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -109,7 +107,7 @@ def load_deep_model():
         return None
 
 # ==========================================
-# 5. 数据文件处理（关键修改部分）
+# 5. 数据文件处理（修正样品名称提取）
 # ==========================================
 column_names = ['2-Butanone', '2-Ethylfuran', 'Diacetyl', 'Dimethyl disulfide', 'Hexanal', 'Mesityl oxide', '1-Butanol', 'Methyl hexanoate',
                 'Isoamyl alcohol', '2-Methylpyridine', 'trans-2-Hexenal', '2-Pentylfuran', '2-Methylpyrazine', '2-Ethylpyridine', '2-Octanone',
@@ -135,6 +133,25 @@ def detect_encoding_from_bytes(data: bytes) -> str:
         except UnicodeDecodeError:
             continue
     return 'latin1'
+
+def extract_sample_name_from_path(raw: str) -> str:
+    """
+    从可能的文件路径字符串中提取样品名称（去掉.qgd扩展名）
+    不依赖 os.path 或 pathlib，手动处理各种分隔符和隐藏字符。
+    """
+    if not raw:
+        return ""
+    # 清理不可见字符和首尾空白
+    cleaned = raw.strip().replace('\r', '').replace('\n', '').replace('\t', '')
+    # 统一将反斜杠替换为正斜杠
+    normalized = cleaned.replace('\\', '/')
+    # 按 '/' 分割，取最后一段
+    parts = normalized.split('/')
+    filename = parts[-1] if parts else cleaned
+    # 去掉 .qgd 扩展名（不区分大小写）
+    if filename.lower().endswith('.qgd'):
+        filename = filename[:-4]
+    return filename
 
 def extract_compound_data(file_input: Union[str, BytesIO], output_csv=None):
     """
@@ -197,22 +214,19 @@ def extract_compound_data(file_input: Union[str, BytesIO], output_csv=None):
         elif row[0] == '[结果](峰面积)' or row[0] == '[Result](Area)':
             break
 
-    # 3. 从数据文件路径提取样品名称（去掉.qgd）—— 修改后的跨平台版本
+    # 3. 从数据文件路径提取样品名称（使用健壮的自定义函数）
     for idx, row in enumerate(data_rows, start=1):
         if len(row) >= 2:
-            raw = row[1].strip()
-            if not raw:
+            raw_path = row[1].strip()
+            sample_name = extract_sample_name_from_path(raw_path)
+            if not sample_name:
                 sample_name = f"Sample_{idx}"
-            else:
-                # 清理不可见字符
-                raw = raw.replace('\r', '').replace('\n', '')
-                # 使用 pathlib 跨平台获取文件名（不含扩展名）
-                sample_name = Path(raw).stem
-                if not sample_name:  # 防御性处理
-                    sample_name = f"Sample_{idx}"
         else:
             sample_name = f"Sample_{idx}"
         sample_names.append(sample_name)
+
+    # 可选：在 Streamlit 中显示提取结果（调试用，正式使用时可以注释）
+    # st.write("提取的样品名称：", sample_names)
 
     # 4. 读取每个化合物的峰面积数据
     for row in reader:
