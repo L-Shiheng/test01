@@ -235,8 +235,8 @@ def extract_compound_data(file_input: Union[str, BytesIO], output_csv=None):
     #         sample_name = f"Sample_{idx}"
     #     sample_names.append(sample_name)
     for idx, row in enumerate(data_rows, start=1):
-        if len(row) >= 2:
-            raw = row[1].strip()
+    if len(row) >= 2:
+        raw = row[1].strip()
         if not raw:
             sample_name = f"Sample_{idx}"
         else:
@@ -244,13 +244,13 @@ def extract_compound_data(file_input: Union[str, BytesIO], output_csv=None):
             raw = raw.replace('\r', '').replace('\n', '')
             base = os.path.basename(raw).strip()
             # 处理扩展名
-        if base.lower().endswith('.qgd'):
-            sample_name = base[:-4]   # 或者用 os.path.splitext(base)[0]
-        else:
-            sample_name = base
-        else:
-            sample_name = f"Sample_{idx}"
-      sample_names.append(sample_name)
+            if base.lower().endswith('.qgd'):
+                sample_name = base[:-4]   # 或者用 os.path.splitext(base)[0]
+            else:
+                sample_name = base
+    else:
+        sample_name = f"Sample_{idx}"
+    sample_names.append(sample_name)
 
     # 4. 读取结果表头
     # header_row = next(reader)   # ["ID", "组分名称", "数据1 峰面积", ...]
